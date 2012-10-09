@@ -62,14 +62,13 @@
 
 
 ; TODO : Post filter on streamId based on desired stream to view
+; Filter out those counts not part of the stream of interest
 (defn bolt-input-stats [window ^TopologyInfo topology-info component executors include-sys?]
   (let [stats (storm-ui/get-filled-stats executors)
         stream-summary (-> stats (storm-ui/aggregate-bolt-stats include-sys?))
         all-inputs-to-bolt (get (:acked stream-summary) window  )
         ]
 
-        #_;(str all-inputs-to-bolt)
-        ; Filter out those counts not part of the stream of interest
         (filter
             #(= "default" (.get_streamId (first %)))
             all-inputs-to-bolt
@@ -79,6 +78,33 @@
   )
 
 
+(defn generate-nodes-json [bolts-in-order]
+   (interpose ","
+   (map
+        #( str "{\"name\":\"" (.trim %1) "\"}" )
+        bolts-in-order )
+   )
+  )
+
+(defn generate-links-json [bolts-in-order count-map bolt-id]
+  (interpose ","
+    (map
+        #( str "{\"source\":\"" ( .trim (first % )) "\","
+           "\"target\":\"" (.trim bolt-id) "\","
+           "\"value\":" ( second % ) )
+        count-map )
+    )
+)
+
+(defn generate-json-sankey-data [bolts-in-order count-map bolt-id]
+  (apply str "var energy="
+     "{\"nodes\":["
+     (apply str (generate-nodes-json bolts-in-order) )
+     "],"
+     (apply str (generate-links-json bolts-in-order count-map bolt-id) )
+     "]};"
+    )
+)
 
 
 (defn topology-sankey-page [topology-id window include-sys?]
@@ -89,31 +115,35 @@
         topology (.getTopology ^Nimbus$Client nimbus topology-id)
         bolt-summs (filter (partial storm-ui/bolt-summary? topology) (.get_executors summ))
         bolt-comp-summs (storm-ui/group-by-comp bolt-summs)
+        bolts-in-order (into [] (keys bolt-comp-summs))
         ]
     (concat
-     [[:h2 "Components" ]]
-      [[:div
-
-        (for [[bolt-id summs] bolt-comp-summs]
-          [:p bolt-id " - " (count summs) ]
-          ; (str summs)
-          )
-
-      ]]
 
       [[:div
         (for [[bolt-id summs] bolt-comp-summs]
 
-          (let [input-stats (bolt-input-stats window summ bolt-id
-                 (storm-ui/component-task-summs summ topology bolt-id)
-                 include-sys?)]
+          (let [task-summs (storm-ui/component-task-summs summ topology bolt-id)
+                input-stats (bolt-input-stats window summ bolt-id task-summs include-sys?)
+                count-map ( into []
+                            (for [[ gsid count ] input-stats]
+                                 [(.get_componentId gsid) count]) )
+                ]
+
             (concat
+              ;[[:script
+                (generate-json-sankey-data bolts-in-order count-map bolt-id)
+        ;        ]]
+              #_[
+               "{\"nodes\":["
+               (generate-nodes-json bolts-in-order)
+               "],"
+               "\"links\":["
+               (generate-links-json bolts-in-order count-map bolt-id)
+               "]}"
+              ]
 
-              (for [[global-stream-id count] input-stats]
-                  #_[:p "{ \"source\" : " (.get_componentId global-stream-id)
-                   ", \"target\": " bolt-id
-                   ", \"value\": " count
-                   "},"]
+              (for [[component-id count] count-map]
+
                    [:script "var energy =
                     {\"nodes\":[
                     {\"name\":\"Agricultural 'waste'\"},
@@ -133,9 +163,8 @@
                     "
                    ]
                 )
-
               )
-          )
+            )
           )
         ]]
 
