@@ -3,7 +3,7 @@ var margin = {top: 1, right: 1, bottom: 6, left: 1},
     height = 500 - margin.top - margin.bottom;
 
 var formatNumber = d3.format(",.0f"),
-    format = function(d) { return formatNumber(d) + " TWh"; },
+    format = function(d) { return formatNumber(d) + " tuples"; },
     color = d3.scale.category20();
 
 var svg = d3.select("#chart").append("svg")
@@ -19,34 +19,14 @@ var sankey = d3.sankey()
 
 var path = sankey.link();
 
-
-/*var energy = {"nodes":[
-{"name":"Agricultural 'waste'"},
-{"name":"Bio-conversion"},
-{"name":"Liquid"},
-{"name":"Losses"},
-{"name":"Solid"},
-{"name":"Gas"}
-],
-"links":[
-{"source":0,"target":1,"value":124.729},
-{"source":1,"target":2,"value":0.597},
-{"source":1,"target":3,"value":26.862},
-{"source":1,"target":4,"value":280.322},
-{"source":1,"target":5,"value":81.144}
-]};*/
-
-
-
-//d3.json("/js/energy.json", function(energy) {
 $(window).load(function() {
   sankey
-      .nodes(energy.nodes)
-      .links(energy.links)
+      .nodes(tupleStats.nodes)
+      .links(tupleStats.links)
       .layout(32);
 
   var link = svg.append("g").selectAll(".link")
-      .data(energy.links)
+      .data(tupleStats.links)
     .enter().append("path")
       .attr("class", "link")
       .attr("d", path)
@@ -57,7 +37,7 @@ $(window).load(function() {
       .text(function(d) { return d.source.name + " -> " + d.target.name + "\n" + format(d.value); });
 
   var node = svg.append("g").selectAll(".node")
-      .data(energy.nodes)
+      .data(tupleStats.nodes)
     .enter().append("g")
       .attr("class", "node")
       .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; })

@@ -1,5 +1,7 @@
 ;; java -cp target\;C:\Apps\storm-0.8.1\storm-0.8.1.jar;C:\Apps\storm-0.8.1\lib\*;. clojure.main -i backtype/storm/ui/sankey/sankeyview.clj -e (backtype.storm.ui.sankey/-main)
 
+;; todo : if no stats are present, no viz appears at all
+
 (ns backtype.storm.ui.sankey
   (:use compojure.core)
   (:use [hiccup core page-helpers])
@@ -21,7 +23,7 @@
 (defn sankey-ui-template [body]
   (html
    [:head
-    [:title "Storm UI"]
+    [:title "Storm Sankey UI"]
     (include-css "/css/bootstrap-1.1.0.css")
     (include-css "/css/topology-sankey.css")
     (include-js "/js/jquery-1.6.2.min.js")
@@ -36,31 +38,6 @@
 
 ; TODO : include sys stats conditionally
 
-(defn topology-sankey-page1 [topology-id window include-sys?]
-  (storm-ui/with-nimbus nimbus
-    (let [window (if window window ":all-time")
-          summ (.getTopologyInfo ^Nimbus$Client nimbus topology-id)
-          topology (.getTopology ^Nimbus$Client nimbus topology-id)
-          spout-summs (filter (partial storm-ui/spout-summary? topology) (.get_executors summ))
-          bolt-summs (filter (partial storm-ui/bolt-summary? topology) (.get_executors summ))
-          spout-comp-summs (storm-ui/group-by-comp spout-summs)
-          bolt-comp-summs (storm-ui/group-by-comp bolt-summs)]
-      (concat
-       [[:h2 "Bolts (unknown duration)"]]
-       (storm-ui/bolt-comp-table topology-id bolt-comp-summs (.get_errors summ) window include-sys?)
-
-       ; get json of topo stats
-
-       [[:h2 "Sankey"]
-         [:p {:id "chart"}]
-         ]
-
-       ))
-    )
-)
-
-
-
 ; TODO : Post filter on streamId based on desired stream to view
 ; Filter out those counts not part of the stream of interest
 (defn bolt-input-stats [window ^TopologyInfo topology-info component executors include-sys?]
@@ -73,39 +50,72 @@
             #(= "default" (.get_streamId (first %)))
             all-inputs-to-bolt
         )
-
     )
   )
 
 
-(defn generate-nodes-json [bolts-in-order]
+(defn generate-nodes-json [components-in-order]
    (interpose ","
    (map
         #( str "{\"name\":\"" (.trim %1) "\"}" )
-        bolts-in-order )
+        components-in-order )
    )
   )
 
-(defn generate-links-json [bolts-in-order count-map bolt-id]
+
+(defn lookup-component-index [ bolt-id components-in-order ]
+  (.indexOf components-in-order ( .trim  bolt-id ) )
+)
+
+(defn generate-links-json [components-in-order link-stats]
   (interpose ","
     (map
-        #( str "{\"source\":\"" ( .trim (first % )) "\","
-           "\"target\":\"" (.trim bolt-id) "\","
-           "\"value\":" ( second % ) )
+        #( str
+           "{\"source\":" ( lookup-component-index (first (first % )) components-in-order) ","
+           "\"target\":" ( lookup-component-index (second (first %)) components-in-order ) ","
+           "\"value\":" ( nth (first %) 2 )
+           "}\n"
+         )
+       link-stats)
+    )
+)
+
+
+(defn link-stats-for-bolt-target [bolt-id summ topology window include-sys?]
+  (let [task-summs (storm-ui/component-task-summs summ topology bolt-id)
+        input-stats (bolt-input-stats window summ bolt-id task-summs include-sys?)
+        count-map ( into []
+                    (for [[ gsid count ] input-stats]
+                         [(.get_componentId gsid) count]) )
+        ]
+
+    (map
+        #( vector
+           (.trim (first % )) (.trim bolt-id) ( second % ) )
         count-map )
     )
 )
 
-(defn generate-json-sankey-data [bolts-in-order count-map bolt-id]
-  (apply str "var energy="
-     "{\"nodes\":["
-     (apply str (generate-nodes-json bolts-in-order) )
-     "],"
-     (apply str (generate-links-json bolts-in-order count-map bolt-id) )
-     "]};"
+(defn generate-json-sankey-data [ bolts-in-order components-in-order bolt-comp-summs summ topology window include-sys? ]
+
+  (def link-stats
+        (map
+           #(link-stats-for-bolt-target % summ topology window include-sys? )
+           bolts-in-order
+       )
+  )
+
+  (str
+    "var tupleStats=\n"
+    "{\"nodes\":["
+    (apply str (generate-nodes-json components-in-order) )
+    "],"
+    "\"links\":["
+    (apply str (generate-links-json components-in-order
+        (filter #(seq %) link-stats) ) )
+    "]};"
     )
 )
-
 
 (defn topology-sankey-page [topology-id window include-sys?]
   (storm-ui/with-nimbus nimbus
@@ -114,66 +124,25 @@
         summ (.getTopologyInfo ^Nimbus$Client nimbus topology-id)
         topology (.getTopology ^Nimbus$Client nimbus topology-id)
         bolt-summs (filter (partial storm-ui/bolt-summary? topology) (.get_executors summ))
+        spout-summs (filter (partial storm-ui/spout-summary? topology) (.get_executors summ))
         bolt-comp-summs (storm-ui/group-by-comp bolt-summs)
+        spout-comp-summs (storm-ui/group-by-comp spout-summs)
         bolts-in-order (into [] (keys bolt-comp-summs))
+        spouts-in-order (into [] (keys spout-comp-summs))
+        components-in-order ( concat spouts-in-order bolts-in-order )
         ]
     (concat
 
-      [[:div
-        (for [[bolt-id summs] bolt-comp-summs]
+       [[:script (apply str
+          ( generate-json-sankey-data bolts-in-order components-in-order bolt-comp-summs summ topology window include-sys? ))
+       ]]
 
-          (let [task-summs (storm-ui/component-task-summs summ topology bolt-id)
-                input-stats (bolt-input-stats window summ bolt-id task-summs include-sys?)
-                count-map ( into []
-                            (for [[ gsid count ] input-stats]
-                                 [(.get_componentId gsid) count]) )
-                ]
-
-            (concat
-              ;[[:script
-                (generate-json-sankey-data bolts-in-order count-map bolt-id)
-        ;        ]]
-              #_[
-               "{\"nodes\":["
-               (generate-nodes-json bolts-in-order)
-               "],"
-               "\"links\":["
-               (generate-links-json bolts-in-order count-map bolt-id)
-               "]}"
-              ]
-
-              (for [[component-id count] count-map]
-
-                   [:script "var energy =
-                    {\"nodes\":[
-                    {\"name\":\"Agricultural 'waste'\"},
-                    {\"name\":\"Bio-conversion\"},
-                    {\"name\":\"Liquid\"},
-                    {\"name\":\"Losses\"},
-                    {\"name\":\"Solid\"},
-                    {\"name\":\"Gas\"}
-                    ],
-                    \"links\":[
-                    {\"source\":0,\"target\":1,\"value\":124.729},
-                    {\"source\":1,\"target\":2,\"value\":0.597},
-                    {\"source\":1,\"target\":3,\"value\":26.862},
-                    {\"source\":1,\"target\":4,\"value\":280.322},
-                    {\"source\":1,\"target\":5,\"value\":81.144}
-                    ]};
-                    "
-                   ]
-                )
-              )
-            )
-          )
-        ]]
-
-       [[:h2 "Sankey"]
+       [[:h2 "Sankey Chart"]
          [:p {:id "chart"}]
          ]
-     )))
-  )
-
+     )
+  ))
+)
 
 
 (defroutes main-routes
@@ -191,3 +160,4 @@
 
 (defn -main []
   (run-jetty app {:port 8080}))
+; {:port (Integer. (*STORM-CONF* UI-PORT))}
