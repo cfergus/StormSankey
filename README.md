@@ -8,7 +8,6 @@ I stole most everything that makes this interesting. Credit is due to Nathan Mar
 
 Below is an image based on an expansion of the word count topology: (if I can work github's md syntax)
 
-Inline-style:
 ![alt text](https://github.com/cfergus/StormSankey/raw/master/sankey-storm.png "Example Visualization of a Storm Topology")
 
 ## How does it suck?
@@ -36,6 +35,6 @@ I am interested in receiving feedback on:
 * What clojure forms/syntax would be better to use. (there are many opportunities for feedback)
 * In what ways would the visualization be more useful. No guarantees that they will be implemented.
 * In what ways could this be a better github neighbor. Such as:
-** License inclusion
-** Should it instead be a fork of storm, with a pull request
-** Have I caused any great offenses in my project structure or otherwise
+1. License inclusion
+2. Should it instead be a fork of storm, with a pull request
+3. Have I caused any great offenses in my project structure or otherwise
