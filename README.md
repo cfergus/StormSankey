@@ -6,9 +6,10 @@ It shows a visual representation of the volume of tuples sent from one storm com
 
 I stole most everything that makes this interesting. Credit is due to Nathan Marz and Michael Bostock in this regard.
 
-If this works, an image of what it presents is below:
+Below is an image based on an expansion of the word count topology: (if I can work github's md syntax)
 
-[[sankey-storm.png]]
+Inline-style:
+![alt text](https://github.com/cfergus/StormSankey/raw/master/sankey-storm.png "Example Visualization of a Storm Topology")
 
 ## How does it suck?
 
