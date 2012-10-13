@@ -1,0 +1,2 @@
+nimbus.host: 192.168.1.13
+nimbus.thrift.port: 6627
